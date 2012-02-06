@@ -15,6 +15,7 @@ $np = Nagios::Plugin->new(usage => "Usage: %s [--host|-H <host>] [--port|-p <por
                           blurb => 'This plugin checks changes, connections, last save, or memory use',
                           license => "Brought to you AS IS, GPL v3",
                           shortname => "Redis",
+                          timeout => 10,
                          );
 
 $np->add_arg(spec => 'host|H=s',
@@ -57,7 +58,6 @@ alarm $ng->timeout;
 my $host = $ng->get('host');
 my $port = $ng->get('port');
 my $checks = $ng->get('checks');
-my $o_time = time;
 
 # verbosity
 my $verbose = $ng->get('verbose');
@@ -96,7 +96,7 @@ if ($checks =~ /^connections$/i) {
 
 # check seconds since last save
 if ($checks =~ /^lastsave$/i) {
-  my $o_lastsave = ( $o_time -= $info->{'last_save_time'});
+  my $o_lastsave = ( time() - $info->{'last_save_time'});
   $code = $np->check_threshold(check => $o_lastsave);
   $msg = ("Time since last save: " .
     $o_lastsave .
