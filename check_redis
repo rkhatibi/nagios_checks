@@ -12,7 +12,7 @@ my $np;
 
 $np = Nagios::Plugin->new(usage => "Usage: %s [--host|-H <host>] [--port|-p <port>] [--checks <type of check>] [ -c|--critical=<threshold> ] [ -w|--warning=<threshold>] [-?|--usage] [-V|--version] [-h|--help] [-v|--verbose] [-t|--timeout=<timeout>]",
                           version => $VERSION,
-                          blurb => 'This plugin checks changes, connections, last save, or memory use',
+                          blurb => 'This plugin checks changes, connections, last save, memory use, or instance status',
                           license => "Brought to you AS IS, GPL v3",
                           shortname => "Redis",
                           timeout => 10,
@@ -31,7 +31,7 @@ $np->add_arg(spec => 'port|p=i',
             );
 
 $np->add_arg(spec => 'checks=s',
-             help => q(one of: changes, connections, lastsave, or memory),
+             help => q(one of: changes, connections, instance, lastsave, memory),
              required => 0,
              default => 0,
             );
@@ -58,16 +58,17 @@ alarm $ng->timeout;
 my $host = $ng->get('host');
 my $port = $ng->get('port');
 my $checks = $ng->get('checks');
+my $o_time = time;
 
 # verbosity
 my $verbose = $ng->get('verbose');
 
 my $redis;
 eval {
-	$redis = Redis->new( server => "$host:$port", debug => 0);
+        $redis = Redis->new( server => "$host:$port", debug => 0);
 };
 if ($@) {
-	$np->nagios_exit( CRITICAL, "Can't connect to $host:$port" );
+        $np->nagios_exit( CRITICAL, "Can't connect to $host:$port" );
 }
 
 my $info = $redis->info();
@@ -96,7 +97,7 @@ if ($checks =~ /^connections$/i) {
 
 # check seconds since last save
 if ($checks =~ /^lastsave$/i) {
-  my $o_lastsave = ( time() - $info->{'last_save_time'});
+  my $o_lastsave = ( $o_time -= $info->{'last_save_time'});
   $code = $np->check_threshold(check => $o_lastsave);
   $msg = ("Time since last save: " .
     $o_lastsave .
@@ -113,21 +114,34 @@ if ($checks =~ /^memory$/i) {
     );
 }
 
-# TODO 
 # Check slave status
-#if ($checks =~ /^instance$/i) {
-#  if ($info->{'role'} eq "slave") {
-#	  if ($info->{'master_sync_in_progress'} != 0) {
-#	    $msg = "redis replication sync is in progress";
-#	    $code = CRITICAL;
-#	  }
-#  }
-#  elsif ($info->{'role'} eq "master") {
-#	  if ($info->{'connected_slaves'} == 0) {
-#	    $msg = "This Redis instance has no slaves";
-#	    $code = CRITICAL;
-#	  }
-#  }
-#}
+if ($checks =~ /^instance$/i) {
+  if ($info->{'role'} eq "slave") {
+    if ($info->{'master_link_status'} ne "up") {
+      $msg = "redis replication sync is in progress";
+      $code = CRITICAL;
+    }
+    else {
+      $code = OK;
+      $msg = ("Slave Status: " .
+      $info->{'master_link_status'} .
+      ""
+      );
+    }
+  }
+  elsif ($info->{'role'} eq "master") {
+    if ($info->{'connected_slaves'} == 0) {
+      $msg = "This Redis instance has no slaves";
+      $code = CRITICAL;
+    }
+    else {
+      $code = OK;
+      $msg = ("Master/Slave Connections: " .
+      $info->{'connected_slaves'} .
+      ""
+      );
+    }
+  }
+}
 
 $np->nagios_exit( $code, $msg );
