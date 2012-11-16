@@ -1,0 +1,67 @@
+#!/usr/bin/env perl
+#vim:syntax=perl
+
+use warnings;
+use strict;
+use Getopt::Long qw(:config gnu_getopt);
+use Nagios::Plugin;
+
+my $VERSION="1.1";
+my $np;
+
+$np = Nagios::Plugin->new(usage => "Usage: %s [ -c|--critical=<threshold> ] [ -w|--warning=<threshold>] [-?|--usage] [-V|--version] [-h|--help] [-v|--verbose] [-t|--timeout=<timeout>]",
+                          version => $VERSION,
+                          blurb => 'This plugin checks memory usage',
+                          license => "Brought to you AS IS, GPL v3",
+                          shortname => "Memory",
+                          timeout => 10,
+                         );
+
+$np->add_arg(spec => 'critical|c=s',
+             help => q(Exit with CRITICAL status if percentage of free memory is less than INTEGER),
+             required => 0,
+             default => 95,
+            );
+
+$np->add_arg(spec => 'warning|w=s',
+             help => q(Exit with WARNING status if percentage of free memory is less than INTEGER),
+             required => 0,
+             default => 90,
+            );
+
+$np->getopts;
+my $ng = $np->opts;
+
+# manage timeout
+alarm $ng->timeout;
+
+# verbosity
+my $verbose = $ng->get('verbose');
+
+my $code = OK;
+my $msg = "default message, no code paths executed";
+
+my $qfh = "/proc/meminfo";
+
+open(FH, "<", $qfh )
+  or die "cannot open > $qfh: $!";
+
+my %hash;
+while (my $line=<FH>) {
+  chomp $line;
+  $line =~ s/ kB//;
+  $line =~ tr/ //ds;
+  (my $word1,my $word2) = split /:/, $line;
+
+  $hash{$word1} = $word2;
+}
+
+my $mem_use = int(100 - (($hash{'MemFree'} + $hash{'Cached'} + $hash{'Buffers'}) / $hash{'MemTotal'}) * 100);
+
+$code = $np->check_threshold(check => $mem_use);
+$msg = ("Memory in use : " .
+  $mem_use .
+  "%"
+);
+
+$np->nagios_exit( $code, $msg );
